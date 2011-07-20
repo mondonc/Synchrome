@@ -23,24 +23,26 @@ class Synchromizer():
             print "Reading file ...",
             f = open(self.path+os.sep+dir_index+os.sep+file_index, "r")
             try : 
-                self.synchromelist = pickle.load(f) 
+                self.synchromelist = dict(pickle.load(f))
                 print " [ Done ]"
             finally:
                 f.close()
         except (IOError , EOFError):
             print " [ Failed ! ]"
             #If error, attempting to create file
-            response = raw_input("Do you want to init ? (y/N)")
+            response = raw_input("Do you want to init %s ? (y/N)" % self.name)
             if response in ["y", "Y"]: 
+                dirpath = self.path+os.sep+dir_index
+                if not os.path.isdir(dirpath):
+                    os.makedirs(dirpath)
+                f = open(dirpath+os.sep+file_index, "w")
                 try:
-                    f = open(self.path+os.sep+dir_index+os.sep+file_index, "w")
-                    try:
-                        pickle.dump({}, f) 
-                    finally:
-                        f.close()
-                except (IOError , EOFError):
-                    print "FatalError: Unable to create synchrome file"
-                    exit(os.EX_IOERR)
+                    pickle.dump({}, f) 
+                finally:
+                    f.close()
+        except TypeError:
+            self.synchromelist = {}
+
 
     def add(self,filepath):
         "Add a file to synchromizer"

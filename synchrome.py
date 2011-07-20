@@ -26,13 +26,14 @@ class Action():
 
 
 def build_filelist(sync1,sync2):
+    "Build filelist with only files concerned by the synchromization"
     for filename, hashlist in sync1.synchromelist.iteritems():
         if  filename in sync2.synchromelist:
             sync1.filelist[filename] = hashlist
             sync2.filelist[filename] = sync2.synchromelist[filename]
 
 def search_remove_differences(filelist1, filelist2):
-    "Search the differences between the filelists, remove and add them to conflicts list" 
+    "Search the differences between the filelists for the same files, remove and add them to conflicts list" 
     for filename, hashlist in filelist1.items():
         if hashlist[0] != filelist2[filename][0]:  
             conflicts[filename] = (hashlist,filelist2[filename])
@@ -40,7 +41,7 @@ def search_remove_differences(filelist1, filelist2):
             del filelist2[filename]
 
 def resolve_modified_list(sync1, sync2):
-    "Treate modified lists" 
+    "Treate modified lists : modified file become an action or a conflict" 
 
     #Search action sync1 -> sync2  
     for filename, hashlist in sync1.modified.items():
@@ -73,7 +74,7 @@ def resolve_modified_list(sync1, sync2):
 
 
 def try_history(conflicts, sync1, sync2):
-    "Trying to resolve conflicts "
+    "Trying to resolve conflicts with history"
 
     for filename, (hashlist1, hashlist2) in conflicts.items():
 
@@ -97,7 +98,7 @@ def try_history(conflicts, sync1, sync2):
             
 
 def prompt_conflict(sync1,sync2,conflictlist):
-    "Prompt conflicts"
+    "Prompt conflicts to user"
     for filename, (hashlist1, hashlist2) in conflicts.items():
         print "%s : [%s] ? [%s] ( <, >, or p for pass )" % (filename, sync1.name, sync2.name)
         response = raw_input()
@@ -114,11 +115,12 @@ def prompt_conflict(sync1,sync2,conflictlist):
 
 
 def synchro(synchromizer1, synchromizer2):
+    "Synchromization between two Synchromizers"
 
     # REDUCE THE FILELISTS
     ########################
 
-    #Remove the files not concerned by the synchromization
+    #Build filelist with only files concerned by the synchromization
     build_filelist(synchromizer1, synchromizer2)
 
     #Search and remove the differences between .synchrome list and reality
@@ -144,56 +146,73 @@ def synchro(synchromizer1, synchromizer2):
     prompt_conflict(synchromizer1, synchromizer2, conflicts)
 
     #Run actions
-    for action in actionlist:
-        action.run(synchromizer1.filelist, synchromizer2.filelist)
+    [ action.run(synchromizer1.filelist, synchromizer2.filelist) for action in actionlist ]
 
 
-def add(synchromizers):
-    print "SALUT"
+def add(args):
+    "Add command : add file to all enabled synchromizers"
+    print "Running add command..."
+    print args
+    #[synchromizer.add(args.file_added.name) for synchromizer in args.synchromizers]
+
+def sync(args):
+    "Sync command : run synchro function between all enabled synchromizers"
+    print "Running sync command..."
+    print args
 
 
+def check(args):
+    "Check command : display synchromizers"
+    print "Running check command..."
+    print "%s" % [ "%s : %s %s\n" % (sync.name, "status", "taille") for sync in args.synchromizers ]
+
+
+
+def read_synchromizers_definition():
+    "Read the INI file with configparse, build a list of available synchromizers and return it"
+    pass
+
+def synchromizer_type(synchromizer_name):
+    "Return new synchromizer object or raise exception ; used by argparse"
+    if synchromizer_name in synchromizers_available.keys():
+        return Synchromizer(synchromizer_name, synchromizers_available[synchromizer_name])
+    else:
+        raise(Exception('Unable to find this Synchromizer : %s \n Synchromizers availables : %s' % (synchromizer_name, synchromizers_available.keys()) ))
 
 if __name__ == "__main__":
 
+    synchromizers_available = { "home":"/home/clem", "tmp":"/tmp/"}  #TODO configparse  #List of available synchromizers
+    conflicts = {} #List of conflicts
+    actionlist = [] #List of actions
+
+    #PARSE COMMAND LINE
     parser = argparse.ArgumentParser(description='Synchronization of Synchromizers -> «Synchromization»')
-    subparsers = parser.add_subparsers(help='commands')
-
+    subparsers = parser.add_subparsers(help='sub-command')
+    #Add
     add_parser = subparsers.add_parser('add')
-    add_parser.add_argument('synchromizers', metavar='synchromizers', type=str, nargs='+',
-                   help='one or more sychromizer to deal with')
+    add_parser.add_argument('file_added', metavar='filename', type=file, help='Filename (path)')
+    add_parser.add_argument('synchromizers', metavar='synchromizers', type=synchromizer_type, nargs='+', 
+            help='one or more sychromizer to deal with')
+    add_parser.set_defaults(func=add)
+    #Sync
+    sync_parser = subparsers.add_parser('sync')
+    sync_parser.add_argument('synchromizers', metavar='synchromizers', type=str, nargs='+',
+            help='one or more sychromizer to deal with')
+    sync_parser.set_defaults(func=sync)
+    #check
+    check_parser = subparsers.add_parser('check')
+    check_parser.add_argument('synchromizers', metavar='synchromizers', type=synchromizer_type, nargs='+',
+            help='one or more sychromizer to deal with')
+    check_parser.set_defaults(func=check)
 
-    #parser.add_argument('synchromizers', metavar='N', type=str, nargs='*',
-                   #help='one or more sychromizer to deal with')
-    #parser.add_argument('--add', dest='addfile', action='store', default=None, 
-                   #help='Add file to synchromizer')
-    #parser.add_argument('--get', dest='addfile', action='store', default=None, 
-                   #help='Get file from a synchromizer')
-    #parser.add_argument('--list', dest='addfile', action='store_true', default=False, 
-                   #help='List file of synchromizer')
 
-    args = parser.parse_args()
-    arguments = dict(args._get_kwargs())
-    print arguments
+    #RUN APROPRIATE SUB-COMMAND
+    try:
+        args = parser.parse_args()
+        args.func(args)
+    except Exception as msg:
+        print "ERROR : %s " % msg
+        exit(os.EX_DATAERR)
 
-    #print args.synchromizers
-    #print args.addfile
-    print args
-    print add_parser
-
-    actionlist = [] 
-    conflicts = {}
-    local = Synchromizer("home",".")
-    test = Synchromizer("test","/tmp")
-    #test.add(".bashrc")
-    #local.add("toto")
-    #test.add("toto")
-    #synchro(local,test)
-    print  local
-    print  test
-    print "CONFLICT"
-    print  conflicts
-    print "Actions : "
-    for action in actionlist:
-        print action
-    #local.save()
-    #test.save()
+    #Save in all cases
+    [ synchromizer.save() for synchromizer in args.synchromizers ]
