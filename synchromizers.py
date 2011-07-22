@@ -1,5 +1,5 @@
 # -*- coding: UTF-8 -*-
-# Copyright 2011 Amandine Degand, Clément Mondon
+# Copyright 2011 Clément Mondon
 
 import os
 import pickle
@@ -23,6 +23,7 @@ class Synchromizer():
             print "Reading file ...",
             f = open(self.path+os.sep+dir_index+os.sep+file_index, "r")
             try : 
+                self.name = pickle.load(f)
                 self.synchromelist = dict(pickle.load(f))
                 print " [ Done ]"
             finally:
@@ -37,6 +38,7 @@ class Synchromizer():
                     os.makedirs(dirpath)
                 f = open(dirpath+os.sep+file_index, "w")
                 try:
+                    pickle.dump(self.name, f) 
                     pickle.dump({}, f) 
                 finally:
                     f.close()
@@ -51,6 +53,7 @@ class Synchromizer():
     def save(self):
         "Write filelist file"
         f = open(self.path+os.sep+dir_index+os.sep+file_index, "w")
+        pickle.dump(self.name, f) 
         pickle.dump(self.synchromelist.update(self.filelist), f) 
         #pickle.dump(self.filelist, f) 
         f.close()
@@ -65,7 +68,12 @@ class Synchromizer():
             stdout.write(" "*30)
             stdout.flush()
             stdout.write("\rVerifying %s" % filename)
-            md5 = md5sum(self.path+os.sep+filename) 
+
+            try:
+                md5 = md5sum(self.path+os.sep+filename) 
+            except Exception as (a,v):
+                print a,v
+
             if md5 == hashlist[0]:
                 stdout.write(" OK")
             else:
@@ -100,6 +108,12 @@ class Synchromizer():
         import subprocess 
         subprocess.call(["cp", path1+os.sep+filename, path2+os.sep])
         return None
+
+    def fct_remove(self, filename, path1, path2):
+        import subprocess 
+        subprocess.call(["rm", "-f",path1+os.sep+filename, path2+os.sep])
+        return None
+
 
     def isMe(self):
         "return true if it is me that runs synchrome execution "

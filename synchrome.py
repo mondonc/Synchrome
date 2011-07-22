@@ -1,48 +1,39 @@
 #! /usr/bin/env python
 # -*- coding: UTF-8 -*-
-# Copyright 2011 Amandine Degand, Clément Mondon
+# Copyright 2011 Clément Mondon
 
 import argparse
-from synchromizers import *
+from synchromizers import Synchromizer
+from actions import Action
 
-
-class Action():
-    """ Action entitie """
-    def __init__(self, filename, hashlist, fctcopy, sync1, sync2):
-        self.filename = filename
-        self.sync1 = sync1
-        self.sync2 = sync2
-        self.fct_copy = fctcopy
-        self.hashlist = hashlist
-
-    def run(self, filelist1, filelist2):
-        "Run copy function and update filelists"
-        self.fct_copy(self.filename,self.sync1.path, self.sync2.path)
-        filelist1[self.filename] = self.hashlist
-        filelist2[self.filename] = self.hashlist
-
-    def __str__(self):
-        return self.filename + " : [" + self.sync1.name + "] -> [" + self.sync2.name + "]"
 
 
 def build_filelist(sync1,sync2):
-    "Build filelist with only files concerned by the synchromization"
+    """
+    Build filelist with only files concerned by the synchromization
+    """
     for filename, hashlist in sync1.synchromelist.iteritems():
         if  filename in sync2.synchromelist:
             sync1.filelist[filename] = hashlist
             sync2.filelist[filename] = sync2.synchromelist[filename]
 
+
 def search_remove_differences(filelist1, filelist2):
-    "Search the differences between the filelists for the same files, remove and add them to conflicts list" 
+    """
+    Search the differences between the filelists for the same files, 
+    remove and add them to conflicts list
+    """ 
     for filename, hashlist in filelist1.items():
         if hashlist[0] != filelist2[filename][0]:  
             conflicts[filename] = (hashlist,filelist2[filename])
             del filelist1[filename]
             del filelist2[filename]
 
-def resolve_modified_list(sync1, sync2):
-    "Treate modified lists : modified file become an action or a conflict" 
 
+def resolve_modified_list(sync1, sync2):
+    """
+    Treate modified lists : modified file become an action or a conflict
+    """ 
     #Search action sync1 -> sync2  
     for filename, hashlist in sync1.modified.items():
 
@@ -74,13 +65,14 @@ def resolve_modified_list(sync1, sync2):
 
 
 def try_history(conflicts, sync1, sync2):
-    "Trying to resolve conflicts with history"
-
+    """
+    Trying to resolve conflicts with history
+    """
     for filename, (hashlist1, hashlist2) in conflicts.items():
 
         if hashlist2[0] == hashlist1[0]:
-                del conflicts[filename]
-                break
+            del conflicts[filename]
+            continue
 
         for currenthash in hashlist2:
             if currenthash == hashlist1[0]:
@@ -95,19 +87,21 @@ def try_history(conflicts, sync1, sync2):
                     del conflicts[filename]
                     print "%s : Resolved with history" % filename
                     break
-            
+
 
 def prompt_conflict(sync1,sync2,conflictlist):
-    "Prompt conflicts to user"
+    """
+    Prompt conflicts to user
+    """
     for filename, (hashlist1, hashlist2) in conflicts.items():
         print "%s : [%s] ? [%s] ( <, >, or p for pass )" % (filename, sync1.name, sync2.name)
         response = raw_input()
         if response == ">":
-                actionlist.append (Action (filename, hashlist1, sync2.fct_copy, sync1, sync2))
-                del conflicts[filename]
+            actionlist.append (Action (filename, hashlist1, sync2.fct_copy, sync1, sync2))
+            del conflicts[filename]
         elif response == "<":
-                actionlist.append (Action (filename, hashlist2, sync2.fct_copy, sync2, sync1))
-                del conflicts[filename]
+            actionlist.append (Action (filename, hashlist2, sync2.fct_copy, sync2, sync1))
+            del conflicts[filename]
         elif response == "p":
             pass
         else:
@@ -115,11 +109,11 @@ def prompt_conflict(sync1,sync2,conflictlist):
 
 
 def synchro(synchromizer1, synchromizer2):
-    "Synchromization between two Synchromizers"
+    """
+    Synchromization between two Synchromizers
+    """
 
     # REDUCE THE FILELISTS
-    ########################
-
     #Build filelist with only files concerned by the synchromization
     build_filelist(synchromizer1, synchromizer2)
 
@@ -133,15 +127,13 @@ def synchro(synchromizer1, synchromizer2):
     search_remove_differences(synchromizer1.filelist,synchromizer2.filelist)
 
     # BUILD ACTION LIST
-    ########################
-
     # Expand actions list and conflicts list
     # Emptying modified list
     resolve_modified_list(synchromizer1, synchromizer2)
 
     #Try to use history to solve conflicts automatically
     try_history(conflicts,synchromizer1,synchromizer2)
-    
+
     #Ask user to take a decision
     prompt_conflict(synchromizer1, synchromizer2, conflicts)
 
@@ -150,34 +142,42 @@ def synchro(synchromizer1, synchromizer2):
 
 
 def add(args):
-    "Add command : add file to all enabled synchromizers"
+    """
+    Add command : add file to all enabled synchromizers
+    """
     print "Running add command..."
     print args
     #[synchromizer.add(args.file_added.name) for synchromizer in args.synchromizers]
 
 def sync(args):
-    "Sync command : run synchro function between all enabled synchromizers"
+    """
+    Sync command : run synchro function between all enabled synchromizers
+    """
     print "Running sync command..."
     print args
 
-
 def check(args):
-    "Check command : display synchromizers"
+    """
+    Check command : display synchromizers
+    """
     print "Running check command..."
     print "%s" % [ "%s : %s %s\n" % (sync.name, "status", "taille") for sync in args.synchromizers ]
 
-
-
 def read_synchromizers_definition():
-    "Read the INI file with configparse, build a list of available synchromizers and return it"
+    """
+    Read the INI file with configparse, build a list of available synchromizers and return it
+    """
     pass
 
 def synchromizer_type(synchromizer_name):
-    "Return new synchromizer object or raise exception ; used by argparse"
+    """
+    Return new synchromizer object or raise exception ; used by argparse
+    """
     if synchromizer_name in synchromizers_available.keys():
         return Synchromizer(synchromizer_name, synchromizers_available[synchromizer_name])
     else:
         raise(Exception('Unable to find this Synchromizer : %s \n Synchromizers availables : %s' % (synchromizer_name, synchromizers_available.keys()) ))
+    #argparse.ArgumentTypeError(msg)
 
 if __name__ == "__main__":
 
