@@ -1,11 +1,14 @@
-#! /usr/bin/env python
+#! /usr/bin/env python2.7
 # -*- coding: UTF-8 -*-
 # Copyright 2011 Clément Mondon
 
-import argparse
+import argparse, ConfigParser
+import os
 from synchromizers import Synchromizer
+import  synchromizers
+from synchromizers import dir_index, file_index, synchromizer_index
+from tools import print_done, print_failed, print_sync_name, print_running
 from actions import Action
-
 
 
 def build_filelist(sync1,sync2):
@@ -140,48 +143,104 @@ def synchro(synchromizer1, synchromizer2):
     #Run actions
     [ action.run(synchromizer1.filelist, synchromizer2.filelist) for action in actionlist ]
 
+def build_local_sync():
+    local = Synchromizer("(local)")
+    return synchromizer_type(local.name)
 
 def add(args):
     """
     Add command : add file to all enabled synchromizers
     """
-    print "Running add command..."
-    print args
-    #[synchromizer.add(args.file_added.name) for synchromizer in args.synchromizers]
+    sync_local = build_local_sync() 
+    md5 = sync_local.local_add(args.file_added) 
+    for synchromizer in args.synchromizers:
+        print_sync_name(synchromizer.name)
+        print_running("Adding %s ..." % args.file_added.name)
+        synchromizer.remote_add(args.file_added.name, md5)
+        print_done()
+    sync_local.save()
+    [ synchromizer.save() for synchromizer in args.synchromizers ]
+    #"\n".join([synchromizer.add(args.file_added.name) for synchromizer in args.synchromizers])
+    #"###\n".join([synchromizer.add(args.file_added.name) for synchromizer in args.synchromizers])
 
 def sync(args):
     """
     Sync command : run synchro function between all enabled synchromizers
     """
-    print "Running sync command..."
-    print args
+    global sync_local 
+    sync_local = build_local_sync() 
+    args.synchromizers.append(sync_local)
+    
+    synchromizers_list = args.synchromizers
+
+    for synchromizer1 in synchromizers_list:
+        for synchromizer2 in synchromizers_list:
+            synchro(synchromizer1, synchromizer2) 
+        synchromizers_list.remove(synchromizer1)
+
 
 def check(args):
     """
     Check command : display synchromizers
     """
-    print "Running check command..."
-    print "%s" % [ "%s : %s %s\n" % (sync.name, "status", "taille") for sync in args.synchromizers ]
+    if args.synchromizers:
+        [ print_sync_name(sync.name+" %s \n %s" % (len(sync), sync.synchromelist.keys() )) for sync in args.synchromizers ]
+    #Print local synchromizer only
+    else:
+        sync = build_local_sync()
+        print_sync_name(sync.name+" %s \n %s" % (len(sync), sync.synchromelist.keys() ))
 
 def read_synchromizers_definition():
     """
     Read the INI file with configparse, build a list of available synchromizers and return it
     """
-    pass
+
+    result = {}
+    print_running("Reading synchromizers definitions ...")
+
+    try:
+        f = open(dir_index+os.sep+synchromizer_index, "r")
+        config = ConfigParser.ConfigParser()
+        config.readfp(f)
+        f.close()
+        
+        for synchromizer in config.sections():
+            opts = {}
+            for opt in config.options(synchromizer):
+                opts[opt]=config.get(synchromizer, opt) 
+            result[synchromizer] = opts
+        print_done()
+
+
+    except (IOError , EOFError, IndexError, AssertionError) as (msg) :
+            print_failed()
+
+            dirpath = '.'+os.sep+dir_index
+            if not os.path.isdir(dirpath):
+                os.makedirs(dirpath)
+            
+            #If error, attempting to create file
+            response = raw_input("I can't read synchromizer defintion. It is a problem. \nIf you want init a new file, press 'y'. \nYou should certainly copy SYNCHOME_PATH/%s%s of another synchromizer. \nPress 'n' to quit  (y/N)" % (dir_index,synchromizer_index))
+
+            if response in ["y", "Y"]:
+                open(dirpath+os.sep+synchromizer_index, 'w').close()
+            else:
+                exit(os.EX_DATAERR)
+    return result 
 
 def synchromizer_type(synchromizer_name):
     """
     Return new synchromizer object or raise exception ; used by argparse
     """
     if synchromizer_name in synchromizers_available.keys():
-        return Synchromizer(synchromizer_name, synchromizers_available[synchromizer_name])
+        return eval(synchromizers_available[synchromizer_name]['class']+"(synchromizer_name, synchromizers_available[synchromizer_name]['path'])")
     else:
         raise(Exception('Unable to find this Synchromizer : %s \n Synchromizers availables : %s' % (synchromizer_name, synchromizers_available.keys()) ))
     #argparse.ArgumentTypeError(msg)
 
 if __name__ == "__main__":
 
-    synchromizers_available = { "home":"/home/clem", "tmp":"/tmp/"}  #TODO configparse  #List of available synchromizers
+    synchromizers_available = read_synchromizers_definition() #{ "home":"/home/clem", "tmp":"/tmp/"}  #TODO configparse  #List of available synchromizers
     conflicts = {} #List of conflicts
     actionlist = [] #List of actions
 
@@ -196,23 +255,22 @@ if __name__ == "__main__":
     add_parser.set_defaults(func=add)
     #Sync
     sync_parser = subparsers.add_parser('sync')
-    sync_parser.add_argument('synchromizers', metavar='synchromizers', type=str, nargs='+',
+    sync_parser.add_argument('synchromizers', metavar='synchromizers', type=synchromizer_type, nargs='+',
             help='one or more sychromizer to deal with')
     sync_parser.set_defaults(func=sync)
     #check
     check_parser = subparsers.add_parser('check')
-    check_parser.add_argument('synchromizers', metavar='synchromizers', type=synchromizer_type, nargs='+',
+    check_parser.add_argument('synchromizers', metavar='synchromizers', type=synchromizer_type, nargs='*',
             help='one or more sychromizer to deal with')
     check_parser.set_defaults(func=check)
 
 
-    #RUN APROPRIATE SUB-COMMAND
-    try:
-        args = parser.parse_args()
-        args.func(args)
-    except Exception as msg:
-        print "ERROR : %s " % msg
-        exit(os.EX_DATAERR)
 
-    #Save in all cases
-    [ synchromizer.save() for synchromizer in args.synchromizers ]
+    #RUN APROPRIATE SUB-COMMAND
+    #try:
+    args = parser.parse_args()
+    args.func(args)
+    #except Exception as (msg):
+    #    print_failed("\nERROR : %s " % (msg))
+    #    exit(os.EX_DATAERR)
+
