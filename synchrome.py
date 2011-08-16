@@ -16,7 +16,7 @@ def build_filelist(sync1,sync2):
     Build filelist with only files concerned by the synchromization
     """
     for filename, hashlist in sync1.synchromelist.iteritems():
-        if  filename in sync2.synchromelist:
+        if  sync2.synchromelist.has_key(filename):
             sync1.filelist[filename] = hashlist
             sync2.filelist[filename] = sync2.synchromelist[filename]
 
@@ -27,7 +27,7 @@ def search_remove_differences(filelist1, filelist2):
     remove and add them to conflicts list
     """ 
     for filename, hashlist in filelist1.items():
-        if hashlist[0] != filelist2[filename][0]:  
+        if filelist2.has_key(filename) and hashlist[0] != filelist2[filename][0]:  
             conflicts[filename] = (hashlist,filelist2[filename])
             del filelist1[filename]
             del filelist2[filename]
@@ -45,9 +45,8 @@ def resolve_modified_list(sync1, sync2):
             conflicts[filename] = (hashlist,sync2.modified[filename])
             del sync2.modified[filename]
         else:
-
             #If old hashs are equal, we can copy
-            if hashlist[0] == sync2.filelist[filename][0]:
+            if hashlist[1] == sync2.filelist[filename][0]:
                 actionlist.append( Action(filename,hashlist,sync2.fct_copy,sync1, sync2) )
             else:
                 conflicts[filename] = (hashlist,sync2.filelist[filename])
@@ -58,11 +57,12 @@ def resolve_modified_list(sync1, sync2):
 
     #There are not basic conflict, Search action sync1 -> sync2 , or conflict
     for filename, hashlist in sync2.modified.items():
+
         #If old hashs are equal, we can copy
-        if hashlist[0] == sync1.modified[filename][0]:
-            actionlist.append( Action(filename,hashlist,sync2.fct_copy,sync1, sync2) )
+        if hashlist[1] == sync1.filelist[filename][0]:
+            actionlist.append( Action(filename,hashlist,sync2.fct_copy,sync2, sync1) )
         else:
-            conflicts[filename] = (hashlist,sync1.modified[filename])
+            conflicts[filename] = (hashlist,sync1.filelist[filename])
         del sync2.modified[filename]
         del sync1.filelist[filename]
 
@@ -74,6 +74,7 @@ def try_history(conflicts, sync1, sync2):
     for filename, (hashlist1, hashlist2) in conflicts.items():
 
         if hashlist2[0] == hashlist1[0]:
+            print "No change, i don't know why I do that"
             del conflicts[filename]
             continue
 
@@ -125,6 +126,9 @@ def synchro(synchromizer1, synchromizer2):
     synchromizer1.test_local_changes()
     synchromizer2.test_local_changes()
 
+    #print synchromizer1.modified.items()
+    #print synchromizer2.modified.items()
+
     #Search and remove the differences between the .synchrome lists
     # Expanding conflicts list
     search_remove_differences(synchromizer1.filelist,synchromizer2.filelist)
@@ -134,14 +138,42 @@ def synchro(synchromizer1, synchromizer2):
     # Emptying modified list
     resolve_modified_list(synchromizer1, synchromizer2)
 
+    #print conflicts
+
     #Try to use history to solve conflicts automatically
     try_history(conflicts,synchromizer1,synchromizer2)
 
     #Ask user to take a decision
+    #print conflicts
     prompt_conflict(synchromizer1, synchromizer2, conflicts)
 
-    #Run actions
-    [ action.run(synchromizer1.filelist, synchromizer2.filelist) for action in actionlist ]
+    if actionlist:
+        print "Action list :"
+        for action in actionlist:
+            if action.sync1 == synchromizer1:
+                direction = "->"
+            else:
+                direction = "<-"
+            print "%s : %s %s %s " % (action.filename, synchromizer1.name, direction, synchromizer2.name) 
+            
+        response = raw_input("Are you agree ? (Y/n)")
+
+        if response in ["n", "N"]:
+            #TODO : regexp pour selectionner les filename à passer en conflit
+            print_running("Exiting ...\n")
+            exit(os.EX_NOUSER)
+
+        #Run actions
+        [ action.run(synchromizer1.filelist, synchromizer2.filelist) for action in actionlist ]
+
+        synchromizer1.save()
+        synchromizer2.save()
+
+        return True #actions performed
+
+    else:
+        #no actions
+        return False
 
 def build_local_sync():
     local = Synchromizer("(local)")
@@ -160,35 +192,46 @@ def add(args):
         print_done()
     sync_local.save()
     [ synchromizer.save() for synchromizer in args.synchromizers ]
-    #"\n".join([synchromizer.add(args.file_added.name) for synchromizer in args.synchromizers])
-    #"###\n".join([synchromizer.add(args.file_added.name) for synchromizer in args.synchromizers])
+
 
 def sync(args):
     """
     Sync command : run synchro function between all enabled synchromizers
     """
-    global sync_local 
     sync_local = build_local_sync() 
     args.synchromizers.append(sync_local)
+    #TODO verif local != synchromizers
+
+    needed = True
+    while needed:
     
-    synchromizers_list = args.synchromizers
+        synchromizers_list = args.synchromizers
+        needed = False
 
-    for synchromizer1 in synchromizers_list:
-        for synchromizer2 in synchromizers_list:
-            synchro(synchromizer1, synchromizer2) 
-        synchromizers_list.remove(synchromizer1)
+        for synchromizer1 in synchromizers_list:
+            synchromizers_list.remove(synchromizer1)
+            for synchromizer2 in synchromizers_list:
+                needed = synchro(synchromizer1, synchromizer2) or needed
 
+    print_running("End of sync process\n")
 
 def check(args):
     """
     Check command : display synchromizers
     """
+
+    #If synchromizers are specified, display it 
     if args.synchromizers:
         [ print_sync_name(sync.name+" %s \n %s" % (len(sync), sync.synchromelist.keys() )) for sync in args.synchromizers ]
+
     #Print local synchromizer only
     else:
+        print_running("Available synchromizers :\n") 
+        print "\n".join([ "%s : %s" % (sync, param)  for sync, param in synchromizers_available.items() ])
         sync = build_local_sync()
-        print_sync_name(sync.name+" %s \n %s" % (len(sync), sync.synchromelist.keys() ))
+        print_sync_name(sync.name+" (%s) : " % len(sync))
+        print "%s" % sync.synchromelist.keys() 
+
 
 def read_synchromizers_definition():
     """
@@ -220,7 +263,10 @@ def read_synchromizers_definition():
                 os.makedirs(dirpath)
             
             #If error, attempting to create file
-            response = raw_input("I can't read synchromizer defintion. It is a problem. \nIf you want init a new file, press 'y'. \nYou should certainly copy SYNCHOME_PATH/%s%s of another synchromizer. \nPress 'n' to quit  (y/N)" % (dir_index,synchromizer_index))
+            response = raw_input("""I can't read synchromizer defintion. It is a problem. \n
+                    If you want init a new file, press 'y'. \n
+                    You should certainly copy SYNCHOME_PATH/%s%s of another synchromizer. \n
+                    Press 'n' to quit  (y/N)""" % (dir_index,synchromizer_index))
 
             if response in ["y", "Y"]:
                 open(dirpath+os.sep+synchromizer_index, 'w').close()

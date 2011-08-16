@@ -9,8 +9,8 @@ import ConfigParser
 
 
 dir_index = ".synchrome/"
-file_index = ".synchrome.cfg"
-synchromizer_index = ".synchromizers.cfg"
+file_index = "files.cfg"
+synchromizer_index = "synchromizers.cfg"
 
 class Synchromizer():
     """ Synchomizer entitie """
@@ -36,8 +36,10 @@ class Synchromizer():
             response = raw_input("Do you want to init %s ? (y/N)" % self.name)
             
             if self.name == "(local)":
+                #TODO : chercher dans la liste des synchromizers en fonction du répertoire courant
                 self.name = raw_input("Enter new name : ")
                 self.path = os.getcwd()
+                self.local_add(open(dir_index+synchromizer_index))
                 self.registre()
 
             if response in ["y", "Y"]: 
@@ -82,7 +84,7 @@ class Synchromizer():
         f.close()
         read_name = config.sections()[0]
         for opt in config.options(read_name):
-            self.synchromelist[opt]=config.get(read_name, opt) 
+            self.synchromelist[opt]=eval(config.get(read_name, opt)) 
         print_done()
         return read_name
 
@@ -94,7 +96,7 @@ class Synchromizer():
         config = ConfigParser.ConfigParser()
         config.add_section(self.name)
         self.synchromelist.update(self.filelist)
-        [ config.set(self.name, filename, hashlist) for filename, hashlist in self.synchromelist.items() ]
+        [ config.set(self.name, filename, hashlist[:10]) for filename, hashlist in self.synchromelist.items() ]
         f = open(self.path+os.sep+dir_index+os.sep+file_index, "w")
         config.write(f)
         f.close()
@@ -112,25 +114,17 @@ class Synchromizer():
         f.close()
         print_done()
 
-
-
-
-
-
-
-
-
-
     def test_local_changes(self):
         "Update modified filelist"
-        stdout.write("Verifying local changes")
-        stdout.write("Verifying local changes")
-        stdout.flush()
+        
         for filename, hashlist in self.filelist.items():
 
-            stdout.write(" "*30)
+            #stdout.write(" "*30)
+            #stdout.flush()
+            print_sync_name("\r"+self.name)
+            print_running("Verifying local changes ...")
+            stdout.write(" %s" % filename)
             stdout.flush()
-            stdout.write("\rVerifying %s" % filename)
 
             try:
                 md5 = md5sum(self.path+os.sep+filename) 
@@ -138,14 +132,17 @@ class Synchromizer():
                 print msg
 
             if md5 == hashlist[0]:
-                stdout.write(" OK")
+                stdout.write(" OK"+" "*20)
             else:
-                stdout.write(" KO")
-                self.modified[filename] = [md5] + eval(hashlist+"[:10]")
+                stdout.write(" KO"+" "*20)
+                hashlist.insert(0, md5)
+                self.modified[filename] = hashlist
                 del self.filelist[filename]
 
-        stdout.write("\rVerifying finished")
-        stdout.write(" "*30+"\n")
+        #stdout.write("\rVerifying finished")
+        print_sync_name("\r"+" "*80+"\r"+self.name)
+        print_running("Verifying local changes ...")
+        print_done()
         stdout.flush()
 
     def read(self, filepath):
@@ -169,20 +166,18 @@ class Synchromizer():
 
     def fct_copy(self, filename, path1, path2):
         import subprocess 
-        subprocess.call(["cp", path1+os.sep+filename, path2+os.sep])
+        directories = filename.rpartition('/')[0]
+
+        if directories and not os.access(path2+os.sep+directories, os.W_OK):
+            os.makedirs(directories)
+
+        subprocess.call(["cp", path1+os.sep+filename, path2+os.sep+filename])
         return None
 
     def fct_remove(self, filename, path1, path2):
         import subprocess 
         subprocess.call(["rm", "-f",path1+os.sep+filename, path2+os.sep])
         return None
-
-
-    def isMe(self):
-        "return true if it is me that runs synchrome execution "
-
-    def isAvailable(self):
-        "return true if i am synchromizable "
 
     def __str__(self):
         return self.name + "\nManaged : " + str(self.synchromelist.keys()) + "\nUnchanged : "+ str(self.filelist.keys()) + "\n" + "Modified : " + str(self.modified.keys())
