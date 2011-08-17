@@ -144,7 +144,7 @@ def prompt_actions(sync1,sync2,actionlist):
     response = raw_input("Are you agree ? (Y/n)")
 
     if response in ["n", "N"]:
-        #TODO : regexp pour selectionner les filename à passer en conflit
+        #TODO : regexp to select filenames -> conflicts 
         print_running("Exiting ...\n")
         exit(os.EX_NOUSER)
 
@@ -218,36 +218,26 @@ def init(args):
     """
 
     cur_dir = os.getcwd().rpartition('/')[2]
+    config = ConfigParser.ConfigParser()
 
-    #TODO : chercher dans la liste des synchromizers en fonction du répertoire courant
     name = raw_input("Enter new name (%s): " % cur_dir)
 
     if not name:
         name = cur_dir
 
-    
-    os.mkdir(dir_index)
+    if not os.path.isdir(dir_index):
+        os.mkdir(dir_index)
 
-
-    print_running("Saving %s ..." % name),
     config = ConfigParser.ConfigParser()
     config.add_section(name)
     f = open(dir_index+os.sep+file_index, "w")
     config.write(f)
     f.close()
-    print_done()
 
-    self.local_add(open(dir_index+synchromizer_index))
-    self.registre()
-
-    if response in ["y", "Y"]: 
-        dirpath = self.path+os.sep+dir_index
-        if not os.path.isdir(dirpath):
-            os.makedirs(dirpath)
-        self.save()
-    else:
-        exit(os.EX_DATAERR)
-
+    local = Synchromizer("(local)", path=os.getcwd())
+    local.registre()
+    local.local_add(open(dir_index+synchromizer_index))
+    local.save()
 
 
 def add(args):
@@ -294,17 +284,20 @@ def check(args):
     Check command : display synchromizers
     """
 
-    #If synchromizers are specified, display it 
-    if args.synchromizers:
-        [ print_sync_name(sync.name+" %s \n %s" % (len(sync), sync.synchromelist.keys() )) for sync in args.synchromizers ]
-
-    #Print local synchromizer only
-    else:
-        print_running("Available synchromizers :\n") 
-        print "\n".join([ "%s : %s" % (sync, param)  for sync, param in synchromizers_available.items() ])
+    if not args.synchromizers:
         sync = build_local_sync()
-        print_sync_name(sync.name+" (%s) : " % len(sync))
-        print "%s" % sync.synchromelist.keys() 
+        args.synchromizers.append(sync)
+
+        print_info("Available synchromizers :") 
+        for sync, param in synchromizers_available.items(): 
+            print_sync_name(sync+" :")
+            print ""
+            [ print_desc(key+" : "+info) for key, info in param.items() ]
+
+    for sync in args.synchromizers:
+        print_sync_name(sync.name+" (%s):"  % len(sync))
+        print ""
+        [ print_desc(info) for info in sync.synchromelist.keys() ]
 
 
 def read_synchromizers_definition():
@@ -313,8 +306,7 @@ def read_synchromizers_definition():
     """
 
     result = {}
-    print_sync_name("")
-    print_running("Reading synchromizers definitions ...")
+    print_global_running("Reading synchromizers definitions ...")
 
     try:
         f = open(dir_index+os.sep+synchromizer_index, "r")
@@ -338,10 +330,7 @@ def read_synchromizers_definition():
                 os.makedirs(dirpath)
             
             #If error, attempting to create file
-            response = raw_input("""I can't read synchromizer defintion. It is a problem. \n
-                    If you want init a new file, press 'y'. \n
-                    You should certainly copy SYNCHOME_PATH/%s%s of another synchromizer. \n
-                    Press 'n' to quit  (y/N)""" % (dir_index,synchromizer_index))
+            response = raw_input("I can't read synchromizer definition. It is a problem. \nYou should certainly copy SYNCHOME_PATH/%s%s of another synchromizer. \nIf you want init a new file, press 'y', press 'n' to quit  (y/N)" % (dir_index,synchromizer_index))
 
             if response in ["y", "Y"]:
                 open(dirpath+os.sep+synchromizer_index, 'w').close()
@@ -389,8 +378,6 @@ class Action():
 
 
 
-
-
 #---------------------------------
 # $4 Other functions (tools)
 #---------------------------------
@@ -405,10 +392,9 @@ except Exception:
 if COLUMNS < 80:
     COLUMNS=80
 
-SYNC_LEN = 10
+SYNC_LEN = 15
 RESULT_LEN = 8
 RUNNING_LEN = COLUMNS - RESULT_LEN - SYNC_LEN - 7  
-
 
 
 def print_done(string="[ Done ]"):
@@ -425,6 +411,15 @@ def print_running(msg):
 
 def print_file(msg):
     print "\033[36m","%s" % msg[-RUNNING_LEN:].ljust(RUNNING_LEN), "\033[00m",
+
+def print_info(msg):
+    print "\033[35m","\r%s" % msg[-RUNNING_LEN:].ljust(RUNNING_LEN), "\033[00m"
+
+def print_desc(msg):
+    print " "*SYNC_LEN+"\033[36m","%s" % msg[-RUNNING_LEN:].ljust(RUNNING_LEN), "\033[00m"
+
+def print_global_running(msg):
+    print "\033[33m","\r%s" % msg[:RUNNING_LEN].ljust(RUNNING_LEN), "\033[00m"+" "*(SYNC_LEN+3),
 
 
 
@@ -453,31 +448,11 @@ class Synchromizer():
             read_name = self.load()
             assert( read_name == self.name or  self.name == "(local)")
             self.name = read_name
-        except (IOError , EOFError, IndexError, AssertionError) as (msg) :
+        except (IOError , EOFError, IndexError, AssertionError, TypeError) as (msg) :
             print_failed()
             print_failed(msg)
-            
-            #If error, attempting to create file
-            response = raw_input("Do you want to init %s ? (y/N)" % self.name)
-            
-            if self.name == "(local)":
-                #TODO : chercher dans la liste des synchromizers en fonction du répertoire courant
-                self.name = raw_input("Enter new name : ")
-                self.path = os.getcwd()
-                self.local_add(open(dir_index+synchromizer_index))
-                self.registre()
-
-            if response in ["y", "Y"]: 
-                dirpath = self.path+os.sep+dir_index
-                if not os.path.isdir(dirpath):
-                    os.makedirs(dirpath)
-                self.save()
-            else:
-                exit(os.EX_DATAERR)
-        except TypeError as msg:
-            print_failed(msg)
-            print "Type error"
-            self.synchromelist = {}
+            print_failed("You should certainly run 'init' subcommand")
+            exit(os.EX_DATAERR)
 
 
     def local_add(self,file_added):
@@ -517,7 +492,7 @@ class Synchromizer():
     def save(self):
         "Write filelist file"
         print_sync_name(self.name)
-        print_running("Saving %s ..." % self.name),
+        print_running("Saving ..."),
         config = ConfigParser.ConfigParser()
         config.add_section(self.name)
         self.synchromelist.update(self.filelist)
@@ -529,12 +504,20 @@ class Synchromizer():
 
     def registre(self):
         "Registre synchromizer to synchromizer_index file"
-        print_running("Registring %s ..." % self.name),
+
+        print_sync_name(self.name)
+        print_running("Registring ...")
+        
         config = ConfigParser.ConfigParser()
+
+        f = open(dir_index+os.sep+synchromizer_index, "r")
+        config.readfp(f)
+        f.close()
+
         config.add_section(self.name)
         config.set(self.name, "class", self.__class__.__name__)
         config.set(self.name, "path", self.path)
-        f = open(self.path+os.sep+dir_index+os.sep+synchromizer_index, "a")
+        f = open(dir_index+os.sep+synchromizer_index, "w")
         config.write(f)
         f.close()
         print_done()
@@ -628,35 +611,43 @@ if __name__ == "__main__":
     synchromizers_available = read_synchromizers_definition() 
 
 
-    #PARSE COMMAND LINE
+    # PARSE COMMAND LINE
     parser = argparse.ArgumentParser(description='Synchronization of Synchromizers -> «Synchromization»')
     subparsers = parser.add_subparsers(help='sub-command')
-    #Add
+    
+    # Add
     add_parser = subparsers.add_parser('add')
     add_parser.add_argument('file_added', metavar='filename', type=file, help='Filename (path)')
     add_parser.add_argument('synchromizers', metavar='synchromizers', type=synchromizer_type, nargs='+', 
             help='one or more sychromizer to deal with')
     add_parser.set_defaults(func=add)
-    #Sync
+    
+    # Sync
     sync_parser = subparsers.add_parser('sync')
     sync_parser.add_argument('synchromizers', metavar='synchromizers', type=synchromizer_type, nargs='+',
             help='one or more sychromizer to deal with')
     sync_parser.set_defaults(func=sync)
-    #check
+    
+    # Check
     check_parser = subparsers.add_parser('check')
     check_parser.add_argument('synchromizers', metavar='synchromizers', type=synchromizer_type, nargs='*',
             help='one or more sychromizer to deal with')
     check_parser.set_defaults(func=check)
 
+    # Init
+    init_parser = subparsers.add_parser('init')
+    init_parser.set_defaults(func=init)
 
 
     #RUN APROPRIATE SUB-COMMAND
-    #try:
-    args = parser.parse_args()
-    args.func(args)
-    #except Exception as (msg):
-    #    print_failed("\nERROR : %s " % (msg))
-    #    exit(os.EX_DATAERR)
+    #args = parser.parse_args()
+    #args.func(args)
+    try:
+        args = parser.parse_args()
+        args.func(args)
+    except Exception as (msg):
+        print_failed("\nERROR : %s " % (msg))
+        exit(os.EX_DATAERR)
 
 
 
